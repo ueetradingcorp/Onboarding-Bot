@@ -18,7 +18,10 @@ def register_help_command(tree: app_commands.CommandTree):
     @tree.command(name="help", description="Alle verfügbaren Bot-Befehle anzeigen")
     async def help_command(interaction: discord.Interaction):
 
-        embed = discord.Embed(
+        # ------------------------------------------------------------------
+        # Embed 1: Titel + alle Slash-Commands
+        # ------------------------------------------------------------------
+        embed1 = discord.Embed(
             title="📖 Onboarding-Bot – Befehlsübersicht",
             description=(
                 "Hier findest du alle verfügbaren Befehle und ihre Funktionen.\n"
@@ -30,7 +33,7 @@ def register_help_command(tree: app_commands.CommandTree):
         # ------------------------------------------------------------------
         # /neu
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed1.add_field(
             name="🆕  `/neu`  🔒",
             value=(
                 "Nimmt ein neues Mitglied nach dem Erstgespräch auf.\n"
@@ -46,7 +49,7 @@ def register_help_command(tree: app_commands.CommandTree):
         # ------------------------------------------------------------------
         # /aufnahme
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed1.add_field(
             name="✅  `/aufnahme`  🔒",
             value=(
                 "Nimmt einen Interessenten offiziell als Mitglied auf.\n"
@@ -62,7 +65,7 @@ def register_help_command(tree: app_commands.CommandTree):
         # ------------------------------------------------------------------
         # /ablehnung
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed1.add_field(
             name="❌  `/ablehnung`  🔒",
             value=(
                 "Lehnt einen Interessenten ab und entfernt ihn vom Server.\n"
@@ -78,7 +81,7 @@ def register_help_command(tree: app_commands.CommandTree):
         # ------------------------------------------------------------------
         # /hallo
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed1.add_field(
             name="👋  `/hallo`",
             value=(
                 "Testbefehl – prüft, ob der Bot erreichbar ist und in den "
@@ -90,9 +93,17 @@ def register_help_command(tree: app_commands.CommandTree):
         )
 
         # ------------------------------------------------------------------
+        # Embed 2: Automatische Hintergrundfunktionen
+        # ------------------------------------------------------------------
+        embed2 = discord.Embed(
+            title="⚙️ Automatische Hintergrundfunktionen",
+            colour=discord.Colour.blurple(),
+        )
+
+        # ------------------------------------------------------------------
         # Automatische Willkommens-DM
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed2.add_field(
             name="📩  Automatische Willkommens-DM",
             value=(
                 "Kein Befehl \u2013 läuft vollautomatisch im Hintergrund.\n"
@@ -107,7 +118,7 @@ def register_help_command(tree: app_commands.CommandTree):
         # ------------------------------------------------------------------
         # Automatische Event-Ankündigungen (Event Manager)
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed2.add_field(
             name="📅  Automatische Event-Ankündigungen",
             value=(
                 "Kein Befehl \u2013 läuft vollautomatisch im Hintergrund.\n"
@@ -124,7 +135,7 @@ def register_help_command(tree: app_commands.CommandTree):
         # ------------------------------------------------------------------
         # Automatische Livestream-Ankündigungen
         # ------------------------------------------------------------------
-        embed.add_field(
+        embed2.add_field(
             name="📡  Automatische Livestream-Ankündigungen",
             value=(
                 "Kein Befehl \u2013 läuft vollautomatisch im Hintergrund.\n"
@@ -136,6 +147,6 @@ def register_help_command(tree: app_commands.CommandTree):
             inline=False,
         )
 
-        embed.set_footer(text="🔒 = Nur für autorisierte Rollen  •  Alle anderen Befehle sind für jeden nutzbar")
+        embed2.set_footer(text="🔒 = Nur für autorisierte Rollen  •  Alle anderen Befehle sind für jeden nutzbar")
 
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.response.send_message(embeds=[embed1, embed2], ephemeral=True)
