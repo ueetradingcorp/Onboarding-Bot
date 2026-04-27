@@ -12,6 +12,7 @@ from hallo_befehl import register_hallo_command
 from livestream_manager import LivestreamManager
 from aufnahme_befehl import register_aufnahme_command
 from ablehnung_befehl import register_ablehnung_command
+from help_befehl import register_help_command
 
 # Weitere Funktionen können hier importiert werden, z.B.:
 # from sos import register_sos_command
@@ -86,6 +87,7 @@ class OnboardingBot(discord.Client):
         register_hallo_command(self.tree)
         register_aufnahme_command(self.tree)
         register_ablehnung_command(self.tree)
+        register_help_command(self.tree)
         # register_sos_command(self.tree)
 
         # Zustand für den Event-Manager
