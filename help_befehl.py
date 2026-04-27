@@ -83,7 +83,7 @@ def register_help_command(tree: app_commands.CommandTree):
             value=(
                 "Testbefehl – prüft, ob der Bot erreichbar ist und in den "
                 "aktuellen Kanal schreiben darf.\n"
-                "Der Bot postet *„Hallo! Der Bot funktioniert!"* in den Kanal.\n"
+                "Der Bot postet *\u201eHallo! Der Bot funktioniert!\u201c* in den Kanal.\n"
                 "**Berechtigung:** Alle Mitglieder"
             ),
             inline=False,
