@@ -16,6 +16,10 @@ from help_befehl import register_help_command
 
 # Weitere Funktionen können hier importiert werden, z.B.:
 # from sos import register_sos_command
+from database import db
+from activity_tracker import ActivityTracker
+from voice_befehl import register_voice_command
+from chat_befehl import register_chat_command
 
 
 # ===========================================================================
@@ -81,6 +85,7 @@ class OnboardingBot(discord.Client):
         # Handler für Events einbinden
         self.onboarding = OnboardingHandler(INTERESSENT_ROLE_ID)
         self.livestream = LivestreamManager()
+        self.activity_tracker = ActivityTracker()
 
         # Slash-Commands registrieren
         register_neu_command(self.tree)
@@ -88,6 +93,8 @@ class OnboardingBot(discord.Client):
         register_aufnahme_command(self.tree)
         register_ablehnung_command(self.tree)
         register_help_command(self.tree)
+        register_voice_command(self.tree)
+        register_chat_command(self.tree)
         # register_sos_command(self.tree)
 
         # Zustand für den Event-Manager
@@ -100,8 +107,9 @@ class OnboardingBot(discord.Client):
         print(f"🔍 Intents: {self.intents}")
 
     # setup_hook wird einmalig beim Start aufgerufen
-    # Hier werden die Slash-Commands bei Discord angemeldet
+    # Hier werden die Slash-Commands bei Discord angemeldet und die DB verbunden
     async def setup_hook(self):
+        await db.connect()
         GUILD = discord.Object(id=GUILD_ID)
         self.tree.copy_global_to(guild=GUILD)
         await self.tree.sync(guild=GUILD)
@@ -114,6 +122,11 @@ class OnboardingBot(discord.Client):
     # Wird aufgerufen, wenn sich der Voice-Status eines Mitglieds ändert
     async def on_voice_state_update(self, member, before, after):
         await self.livestream.on_voice_state_update(member, before, after, self)
+        await self.activity_tracker.on_voice_state_update(member, before, after)
+
+    # Wird aufgerufen, wenn eine neue Nachricht empfangen wird
+    async def on_message(self, message: discord.Message):
+        await self.activity_tracker.on_message(message)
 
     # Debug-Listener: helfen zu isolieren, ob der Bot überhaupt Gateway-Events
     # für geplante Events empfängt. Wenn UPDATE/DELETE ankommen, aber CREATE
@@ -223,7 +236,8 @@ if __name__ == "__main__":
     intents.members = True                  # Für Onboarding & Mitgliederliste im Autocomplete
     intents.guilds = True
     intents.guild_scheduled_events = True   # Für Event-Manager-Feature
-    intents.voice_states = True             # Für Livestream-Ankündigungs-Feature
+    intents.voice_states = True             # Für Livestream-Ankündigungs-Feature & Voice-Tracking
+    intents.message_content = True          # Für Text-Aktivitätstracking
 
     print("🔹 Onboarding-Bot startet...")
 
