@@ -82,12 +82,12 @@ def register_help_command(tree: app_commands.CommandTree):
         # /hallo
         # ------------------------------------------------------------------
         embed1.add_field(
-            name="👋  `/hallo`",
+            name="👋  `/hallo`  🔒",
             value=(
                 "Testbefehl – prüft, ob der Bot erreichbar ist und in den "
                 "aktuellen Kanal schreiben darf.\n"
                 "Der Bot postet *\u201eHallo! Der Bot funktioniert!\u201c* in den Kanal.\n"
-                "**Berechtigung:** Alle Mitglieder"
+                "**Berechtigung:** Recruiter · Moderatoren · Direktoren"
             ),
             inline=False,
         )
@@ -147,6 +147,6 @@ def register_help_command(tree: app_commands.CommandTree):
             inline=False,
         )
 
-        embed2.set_footer(text="🔒 = Nur für autorisierte Rollen  •  Alle anderen Befehle sind für jeden nutzbar")
+        embed2.set_footer(text="🔒 = Nur für autorisierte Rollen (Recruiter · Moderatoren · Direktoren)")
 
         await interaction.response.send_message(embeds=[embed1, embed2], ephemeral=True)
