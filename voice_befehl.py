@@ -18,28 +18,40 @@ from database import db
 # HILFSFUNKTION: Wasserzeichen einfügen
 # ===========================================================================
 
-def _füge_wasserzeichen_ein(ax):
+def _füge_wasserzeichen_ein(fig):
     """
-    Legt das UEETC-Logo halbtransparent zentriert in den Diagramm-Hintergrund.
+    Legt das UEETC-Logo halbtransparent zentriert über die gesamte Figur.
+    Verwendet fig.figimage() damit das Logo proportional bleibt.
     Das Logo muss als 'logo_transparent.png' im selben Verzeichnis liegen.
     """
     logo_pfad = Path(__file__).parent / "logo_transparent.png"
     if not logo_pfad.exists():
-        return  # Kein Logo vorhanden – Diagramm trotzdem erstellen
+        return
 
     try:
+        import numpy as np
+        from PIL import Image
+
         logo = mpimg.imread(str(logo_pfad))
-        ax.imshow(
-            logo,
-            aspect       = "auto",
-            extent       = [
-                ax.get_xlim()[0], ax.get_xlim()[1],
-                ax.get_ylim()[0], ax.get_ylim()[1],
-            ],
-            zorder       = 0,    # Hinter allen anderen Elementen
-            alpha        = 0.08, # Dezent (leicht erkennbar)
-            interpolation= "lanczos",
-        )
+
+        # Figurgröße in Pixeln
+        fig_breite = fig.get_figwidth()  * fig.dpi
+        fig_hoehe  = fig.get_figheight() * fig.dpi
+
+        # Logo auf 60% der Figurhöhe skalieren (quadratisch, unverzerrt)
+        ziel_hoehe  = int(fig_hoehe * 0.6)
+        ziel_breite = ziel_hoehe
+
+        logo_pil = Image.fromarray((logo * 255).astype(np.uint8))
+        logo_pil = logo_pil.resize((ziel_breite, ziel_hoehe), Image.LANCZOS)
+        logo_skaliert = np.array(logo_pil) / 255.0
+
+        # Zentrierte Position
+        x_pos = int((fig_breite  - ziel_breite) / 2)
+        y_pos = int((fig_hoehe   - ziel_hoehe)  / 2)
+
+        fig.figimage(logo_skaliert, xo=x_pos, yo=y_pos, alpha=0.08, zorder=0)
+
     except Exception as e:
         print(f"⚠️ Wasserzeichen konnte nicht geladen werden: {e}")
 
@@ -134,10 +146,10 @@ def _erstelle_voice_chart(
     ax.set_ylim(0, math.ceil(y_max * 1.1))
     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
-    # Wasserzeichen zentriert im Hintergrund
-    _füge_wasserzeichen_ein(ax)
-
     plt.tight_layout()
+
+    # Wasserzeichen zentriert im Hintergrund (nach tight_layout!)
+    _füge_wasserzeichen_ein(fig)
 
     buf = io.BytesIO()
     plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
