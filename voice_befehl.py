@@ -143,6 +143,23 @@ async def _sende_voice_nachricht(
     gesamt_minuten = sum(r["duration_minutes"] or 0.0 for r in rows)
     gesamt_stunden = gesamt_minuten / 60.0
 
+    # --- Dauer für die Anzeige formatieren ---
+    # Wählt je nach Länge die sinnvollste Einheit:
+    #   < 1 Minute   → Sekunden
+    #   < 60 Minuten → Minuten
+    #   sonst        → Stunden + Minuten
+    gesamt_sekunden = gesamt_minuten * 60.0
+    if gesamt_minuten < 1.0:
+        dauer_anzeige = f"**{gesamt_sekunden:.0f} Sekunden**"
+    elif gesamt_stunden < 1.0:
+        dauer_anzeige = f"**{gesamt_minuten:.1f} Minuten**"
+    else:
+        verbleibende_minuten = gesamt_minuten % 60
+        dauer_anzeige = (
+            f"**{gesamt_stunden:.0f} Std. {verbleibende_minuten:.0f} Min.**"
+            f" ({gesamt_minuten:.0f} Minuten gesamt)"
+        )
+
     # --- Diagramm erstellen ---
     try:
         buf = _erstelle_voice_chart(
@@ -164,8 +181,7 @@ async def _sende_voice_nachricht(
         title       = f"🎙️  Voice-Aktivität – {user.display_name}",
         description = (
             f"Zeitraum: **{zeitraum} Tage**\n"
-            f"Gesamt: **{gesamt_stunden:.1f} Stunden** "
-            f"({gesamt_minuten:.0f} Minuten)"
+            f"Gesamt: {dauer_anzeige}"
         ),
         colour      = discord.Colour.blurple(),
         timestamp   = discord.utils.utcnow(),
