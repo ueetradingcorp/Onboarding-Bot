@@ -96,6 +96,12 @@ def _erstelle_voice_chart(
     ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
 
+    # Y-Achse: immer ganze Minuten, Minimum 1 damit die Achse nicht bei 0 klebt
+    import math
+    y_max = max(max(werte), 1.0)
+    ax.set_ylim(0, math.ceil(y_max * 1.1))
+    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
     plt.tight_layout()
 
     buf = io.BytesIO()
