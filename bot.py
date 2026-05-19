@@ -20,7 +20,6 @@ from database import db
 from activity_tracker import ActivityTracker
 from voice_befehl import register_voice_command
 from chat_befehl import register_chat_command
-from dbtest_befehl import register_dbtest_command
 
 
 # ===========================================================================
@@ -96,7 +95,6 @@ class OnboardingBot(discord.Client):
         register_help_command(self.tree)
         register_voice_command(self.tree)
         register_chat_command(self.tree)
-        register_dbtest_command(self.tree)
         # register_sos_command(self.tree)
 
         # Zustand für den Event-Manager
@@ -123,6 +121,7 @@ class OnboardingBot(discord.Client):
 
     # Wird aufgerufen, wenn sich der Voice-Status eines Mitglieds ändert
     async def on_voice_state_update(self, member, before, after):
+        print(f"🔍 Voice-Event: {member.display_name} | vorher={before.channel} | nachher={after.channel}")
         await self.livestream.on_voice_state_update(member, before, after, self)
         await self.activity_tracker.on_voice_state_update(member, before, after)
 
