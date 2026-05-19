@@ -1,5 +1,6 @@
 import io
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 
 import discord
 from discord import app_commands
@@ -7,8 +8,39 @@ import matplotlib
 matplotlib.use("Agg")  # Kein Display erforderlich (headless)
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import matplotlib.image as mpimg
 
 from database import db
+
+
+# ===========================================================================
+# HILFSFUNKTION: Wasserzeichen einfügen
+# ===========================================================================
+
+def _füge_wasserzeichen_ein(ax):
+    """
+    Legt das UEETC-Logo halbtransparent zentriert in den Diagramm-Hintergrund.
+    Das Logo muss als 'logo_transparent.png' im selben Verzeichnis liegen.
+    """
+    logo_pfad = Path(__file__).parent / "logo_transparent.png"
+    if not logo_pfad.exists():
+        return  # Kein Logo vorhanden – Diagramm trotzdem erstellen
+
+    try:
+        logo = mpimg.imread(str(logo_pfad))
+        ax.imshow(
+            logo,
+            aspect       = "auto",
+            extent       = [
+                ax.get_xlim()[0], ax.get_xlim()[1],
+                ax.get_ylim()[0], ax.get_ylim()[1],
+            ],
+            zorder       = 0,    # Hinter allen anderen Elementen
+            alpha        = 0.08, # Dezent (leicht erkennbar)
+            interpolation= "lanczos",
+        )
+    except Exception as e:
+        print(f"⚠️ Wasserzeichen konnte nicht geladen werden: {e}")
 
 
 # ===========================================================================
@@ -96,6 +128,9 @@ def _erstelle_chat_chart(
     fig.autofmt_xdate(rotation=30)
     ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7, zorder=1)
+
+    # Wasserzeichen zentriert im Hintergrund
+    _füge_wasserzeichen_ein(ax)
 
     plt.tight_layout()
 
