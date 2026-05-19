@@ -18,8 +18,8 @@ from help_befehl import register_help_command
 # from sos import register_sos_command
 from database import db
 from activity_tracker import ActivityTracker
-from voice_befehl import register_voice_command
-from chat_befehl import register_chat_command
+from voice_befehl import register_voice_command, VoiceZeitraumView
+from chat_befehl import register_chat_command, ChatZeitraumView
 from dbtest_befehl import register_dbtest_command
 
 
@@ -116,6 +116,12 @@ class OnboardingBot(discord.Client):
         self.tree.copy_global_to(guild=GUILD)
         await self.tree.sync(guild=GUILD)
         print("✅ Slash-Commands wurden bei Discord registriert.")
+
+        # Persistent Views registrieren – damit Buttons nach einem Neustart
+        # weiterhin funktionieren. Platzhalter-IDs reichen für die Registrierung.
+        self.add_view(VoiceZeitraumView(user_id=0, aktueller_zeitraum=30))
+        self.add_view(ChatZeitraumView(user_id=0, aktueller_zeitraum=30))
+        print("✅ Persistent Views registriert.")
 
     # Wird aufgerufen, wenn sich Rollen eines Mitglieds ändern
     async def on_member_update(self, before, after):
