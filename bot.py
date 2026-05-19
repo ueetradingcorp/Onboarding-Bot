@@ -20,6 +20,7 @@ from database import db
 from activity_tracker import ActivityTracker
 from voice_befehl import register_voice_command
 from chat_befehl import register_chat_command
+from dbtest_befehl import register_dbtest_command
 
 
 # ===========================================================================
@@ -95,6 +96,7 @@ class OnboardingBot(discord.Client):
         register_help_command(self.tree)
         register_voice_command(self.tree)
         register_chat_command(self.tree)
+        register_dbtest_command(self.tree)
         # register_sos_command(self.tree)
 
         # Zustand für den Event-Manager
