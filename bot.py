@@ -108,6 +108,27 @@ class OnboardingBot(discord.Client):
         print(f"✅ Bot ist online als {self.user}")
         print(f"🔍 Intents: {self.intents}")
 
+        # Alle User-IDs ermitteln die gerade in einem Voicekanal sitzen
+        aktive_user_ids = set()
+        for guild in self.guilds:
+            for channel in guild.voice_channels:
+                for member in channel.members:
+                    if not member.bot:
+                        aktive_user_ids.add(member.id)
+
+        # Offene Sessions bereinigen – aktive User bekommen neue saubere Sessions
+        await db.cleanup_open_sessions(aktive_user_ids)
+
+        # Für User die noch im Voice sind: neue Sessions starten
+        for guild in self.guilds:
+            for channel in guild.voice_channels:
+                for member in channel.members:
+                    if not member.bot:
+                        await self.activity_tracker.session_starten(
+                            member=member,
+                            channel=channel,
+                        )
+
     # setup_hook wird einmalig beim Start aufgerufen
     # Hier werden die Slash-Commands bei Discord angemeldet und die DB verbunden
     async def setup_hook(self):

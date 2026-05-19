@@ -211,6 +211,69 @@ class Database:
     # Verbindung schließen
     # -----------------------------------------------------------------------
 
+    async def cleanup_open_sessions(self, aktive_user_ids: set[int]):
+        """
+        Bereinigt offene Voice-Sessions beim Bot-Start.
+
+        Für jeden offenen Eintrag gibt es zwei Fälle:
+          • User ist noch im Voice  → neue Session wird vom ActivityTracker
+                                      gestartet; alter Eintrag wird gelöscht
+                                      (er hat keine verwertbare Dauer)
+          • User hat Voice verlassen → Session wird mit Dauer bis jetzt
+                                      abgeschlossen, damit die Zeit nicht
+                                      verloren geht
+
+        Parameter:
+            aktive_user_ids – Set der User-IDs die beim Start noch im Voice sind
+        """
+        if not self.pool:
+            return
+        try:
+            from datetime import datetime, timezone
+            jetzt = datetime.now(timezone.utc)
+
+            # Alle offenen Sessions laden
+            offene = await self.pool.fetch(
+                "SELECT id, user_id, start_time FROM user_voice_activity WHERE end_time IS NULL"
+            )
+
+            if not offene:
+                print("✅ Keine offenen Voice-Sessions gefunden.")
+                return
+
+            abgeschlossen = 0
+            geloescht     = 0
+
+            for row in offene:
+                if row["user_id"] in aktive_user_ids:
+                    # User ist noch im Voice → Eintrag löschen,
+                    # ActivityTracker startet gleich eine saubere neue Session
+                    await self.pool.execute(
+                        "DELETE FROM user_voice_activity WHERE id = $1", row["id"]
+                    )
+                    geloescht += 1
+                else:
+                    # User hat Voice verlassen → Dauer berechnen und abschließen
+                    dauer = (jetzt - row["start_time"]).total_seconds() / 60.0
+                    await self.pool.execute(
+                        """
+                        UPDATE user_voice_activity
+                           SET end_time         = $1,
+                               duration_minutes = $2
+                         WHERE id = $3
+                        """,
+                        jetzt, round(dauer, 2), row["id"]
+                    )
+                    abgeschlossen += 1
+
+            if abgeschlossen > 0:
+                print(f"🧹 {abgeschlossen} unterbrochene Voice-Session(s) abgeschlossen.")
+            if geloescht > 0:
+                print(f"🔄 {geloescht} Session(s) neu gestartet (User noch im Voice).")
+
+        except Exception as exc:
+            print(f"❌ DB cleanup_open_sessions: {exc}")
+
     async def close(self):
         """Verbindungspool schließen."""
         if self.pool:

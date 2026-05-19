@@ -78,6 +78,31 @@ class ActivityTracker:
                     f"→ #{after.channel.name}"
                 )
 
+    async def session_starten(self, member: discord.Member, channel):
+        """
+        Startet eine neue Voice-Session direkt – ohne ein Voice-State-Event.
+        Wird beim Bot-Start verwendet, um Sessions für User zu öffnen
+        die bereits im Voice sitzen.
+        """
+        from datetime import datetime, timezone
+        user_id = member.id
+        now     = datetime.now(timezone.utc)
+
+        session_id = await db.insert_voice_session_start(
+            user_id    = user_id,
+            channel_id = channel.id,
+            start_time = now,
+        )
+        if session_id is not None:
+            self._active_sessions[user_id] = {
+                "session_id": session_id,
+                "start":      now,
+            }
+            print(
+                f"🔄 Session neu gestartet: {member.display_name} "
+                f"→ #{channel.name}"
+            )
+
     # -----------------------------------------------------------------------
     # Text-Tracking
     # -----------------------------------------------------------------------
