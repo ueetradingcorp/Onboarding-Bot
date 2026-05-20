@@ -59,8 +59,7 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     tages_daten: dict = {}
     for row in rows:
         tag = row["start_time"].astimezone(timezone.utc).date()
-        # Minuten → Stunden umrechnen für die Darstellung
-        tages_daten[tag] = tages_daten.get(tag, 0.0) + (row["duration_minutes"] or 0.0) / 60.0
+        tages_daten[tag] = tages_daten.get(tag, 0.0) + (row["duration_minutes"] or 0.0)
 
     heute     = datetime.now(timezone.utc).date()
     startdag  = heute - timedelta(days=days - 1)
@@ -72,13 +71,13 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     ax.set_facecolor("#313338")
 
     ax.plot(alle_tage, werte, color="#5865f2", linewidth=2,
-            marker="o", markersize=3, label="Sprachstunden")
+            marker="o", markersize=3, label="Sprachminuten")
     ax.fill_between(alle_tage, werte, alpha=0.15, color="#5865f2")
 
     ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
                  color="white", fontsize=14, pad=12)
     ax.set_xlabel("Datum",   color="#b5bac1", fontsize=10)
-    ax.set_ylabel("Stunden", color="#b5bac1", fontsize=10)
+    ax.set_ylabel("Minuten", color="#b5bac1", fontsize=10)
     ax.tick_params(colors="#b5bac1")
     ax.spines[:].set_color("#4e5058")
 
@@ -93,19 +92,23 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
         ax.xaxis.set_major_locator(mdates.MonthLocator())
 
     fig.autofmt_xdate(rotation=30)
-    ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
+    ax.legend(
+        facecolor="#313338", labelcolor="white", framealpha=0.8,
+        loc="lower left", bbox_to_anchor=(0, 1.02, 1, 0.08),
+        borderaxespad=0, mode="expand", ncol=1,
+    )
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
 
-    y_max = max(max(werte), 0.1)
-    ax.set_ylim(0, y_max * 1.1)
-    # Y-Achse: eine Nachkommastelle (z.B. "1.5") damit auch kurze Sessions lesbar sind
-    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.1f}"))
+    y_max = max(max(werte), 1.0)
+    ax.set_ylim(0, math.ceil(y_max * 1.1))
+    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
     plt.tight_layout()
     _füge_wasserzeichen_ein(fig)
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
+    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor(),
+                bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     return buf
@@ -145,7 +148,10 @@ async def _sende_voice_nachricht(
         dauer_anzeige = f"**{gesamt_minuten:.1f} Minuten**"
     else:
         verbleibende_minuten = gesamt_minuten % 60
-        dauer_anzeige = f"**{gesamt_stunden:.0f} Std. {verbleibende_minuten:.0f} Min.**"
+        dauer_anzeige = (
+            f"**{gesamt_stunden:.0f} Std. {verbleibende_minuten:.0f} Min.**"
+            f" ({gesamt_minuten:.0f} Minuten gesamt)"
+        )
 
     try:
         buf = _erstelle_voice_chart(

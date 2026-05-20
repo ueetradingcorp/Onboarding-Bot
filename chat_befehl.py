@@ -90,14 +90,19 @@ def _erstelle_chat_chart(username: str, days: int, rows: list) -> io.BytesIO:
         ax.xaxis.set_major_locator(mdates.MonthLocator())
 
     fig.autofmt_xdate(rotation=30)
-    ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
+    ax.legend(
+        facecolor="#313338", labelcolor="white", framealpha=0.8,
+        loc="lower left", bbox_to_anchor=(0, 1.02, 1, 0.08),
+        borderaxespad=0, mode="expand", ncol=1,
+    )
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7, zorder=1)
 
     plt.tight_layout()
     _füge_wasserzeichen_ein(fig)
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
+    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor(),
+                bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     return buf
