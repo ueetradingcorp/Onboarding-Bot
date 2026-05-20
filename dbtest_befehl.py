@@ -142,7 +142,11 @@ def register_dbtest_command(tree: app_commands.CommandTree):
                 member = guild.get_member(row["user_id"])
                 name = member.display_name if member else f"ID {row['user_id']}"
                 start = row["start_time"].strftime("%d.%m. %H:%M")
-                dauer = f"{row['duration_minutes']:.1f} min" if row["duration_minutes"] else "läuft noch"
+                if row["duration_minutes"]:
+                    dm = row["duration_minutes"]
+                    dauer = f"{int(dm // 60)} Std. {int(dm % 60)} Min." if dm >= 60 else f"{dm:.1f} Min."
+                else:
+                    dauer = "läuft noch"
                 voice_zeilen.append(f"• {name} – {start} ({dauer})")
             embed.add_field(
                 name="🕐 Letzte Voice-Einträge",
