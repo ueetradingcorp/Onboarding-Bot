@@ -10,16 +10,21 @@ from database import db
 #
 # Einbindung in bot.py:
 #   tracker = ActivityTracker()
-#   # Voice-Event weiterleiten:
 #   await tracker.on_voice_state_update(member, before, after)
-#   # Text-Event weiterleiten:
 #   await tracker.on_message(message)
+#
+# DESIGN-ENTSCHEIDUNG – kein reiner In-Memory-State:
+#   Bei jedem Railway-Neustart geht der Dict `_active_sessions` verloren.
+#   Deshalb wird beim Leave-Event ZUERST die Datenbank nach einer offenen
+#   Session für diesen User befragt, bevor der In-Memory-Fallback greift.
+#   So überlebt das Tracking auch Neustarts zuverlässig.
 # ===========================================================================
 
 class ActivityTracker:
 
     def __init__(self):
         # Laufende Voice-Sitzungen: {user_id: {"session_id": int, "start": datetime}}
+        # Dient als schneller Cache – DB ist die einzige Quelle der Wahrheit.
         self._active_sessions: dict[int, dict] = {}
 
     # -----------------------------------------------------------------------
@@ -39,6 +44,11 @@ class ActivityTracker:
           • Kanal betreten  → Sitzung starten
           • Kanal verlassen → Sitzung beenden und Dauer speichern
           • Kanal wechseln  → alte Sitzung beenden, neue starten
+
+        Robustheit gegen Bot-Neustarts:
+          Ist der User nicht im In-Memory-Dict (weil der Bot neu gestartet
+          wurde), wird die offene Session direkt aus der DB geladen und
+          korrekt abgeschlossen.
         """
         if member.bot:
             return
@@ -46,47 +56,83 @@ class ActivityTracker:
         user_id = member.id
         now     = datetime.now(timezone.utc)
 
-        # --- Kanal verlassen oder gewechselt ---
+        # --- Kanal verlassen oder gewechselt → Session beenden ---
         if before.channel is not None and before.channel != after.channel:
-            session = self._active_sessions.pop(user_id, None)
-            if session:
-                duration = (now - session["start"]).total_seconds() / 60.0
-                await db.update_voice_session_end(
-                    session_id       = session["session_id"],
-                    end_time         = now,
-                    duration_minutes = round(duration, 2),
-                )
-                print(
-                    f"🎙️  Voice-Ende: {member.display_name} "
-                    f"({duration:.1f} min in #{before.channel.name})"
-                )
+            await self._session_beenden(member, before.channel.name, now)
 
-        # --- Kanal betreten oder gewechselt ---
+        # --- Kanal betreten oder gewechselt → neue Session starten ---
         if after.channel is not None and before.channel != after.channel:
-            session_id = await db.insert_voice_session_start(
-                user_id    = user_id,
-                channel_id = after.channel.id,
-                start_time = now,
-            )
-            if session_id is not None:
-                self._active_sessions[user_id] = {
-                    "session_id": session_id,
-                    "start":      now,
-                }
-                print(
-                    f"🎙️  Voice-Start: {member.display_name} "
-                    f"→ #{after.channel.name}"
-                )
+            await self._session_starten_intern(member, after.channel, now)
 
-    async def session_starten(self, member: discord.Member, channel):
+    async def _session_beenden(
+        self,
+        member: discord.Member,
+        kanal_name: str,
+        now: datetime,
+    ):
         """
-        Startet eine neue Voice-Session direkt – ohne ein Voice-State-Event.
-        Wird beim Bot-Start verwendet, um Sessions für User zu öffnen
-        die bereits im Voice sitzen.
+        Beendet die laufende Session eines Users.
+
+        Strategie:
+          1. In-Memory-Cache prüfen (Normalfall).
+          2. Falls nicht im Cache (nach Neustart): offene Session aus DB laden.
+          3. Dauer berechnen und Session in DB abschließen.
         """
-        from datetime import datetime, timezone
         user_id = member.id
-        now     = datetime.now(timezone.utc)
+        session = self._active_sessions.pop(user_id, None)
+
+        if session is None:
+            # Nach einem Bot-Neustart: offene Session aus der DB holen
+            session = await db.get_open_session(user_id)
+            if session is None:
+                # Kein offener Eintrag → nichts zu tun
+                print(
+                    f"⚠️  Voice-Ende ohne offene Session: {member.display_name} "
+                    f"(#{kanal_name}) – kein DB-Eintrag gefunden."
+                )
+                return
+            print(
+                f"🔄 Session aus DB wiederhergestellt für {member.display_name} "
+                f"(#{kanal_name})"
+            )
+
+        duration = (now - session["start"]).total_seconds() / 60.0
+
+        # Mindestdauer 0.01 min (~0,6 Sek.) um sinnlose Null-Einträge zu vermeiden
+        if duration < 0.01:
+            print(
+                f"⏩ Voice-Session zu kurz (<0,6 s), wird verworfen: "
+                f"{member.display_name} (#{kanal_name})"
+            )
+            await db.delete_voice_session(session["session_id"])
+            return
+
+        await db.update_voice_session_end(
+            session_id       = session["session_id"],
+            end_time         = now,
+            duration_minutes = round(duration, 2),
+        )
+        print(
+            f"🎙️  Voice-Ende: {member.display_name} "
+            f"({duration:.1f} min in #{kanal_name})"
+        )
+
+    async def _session_starten_intern(
+        self,
+        member: discord.Member,
+        channel,
+        now: datetime,
+    ):
+        """
+        Startet eine neue Voice-Session und schreibt sie in die DB.
+        Stellt sicher, dass nie zwei offene Sessions für denselben User
+        gleichzeitig existieren.
+        """
+        user_id = member.id
+
+        # Sicherheitscheck: offene Sessions aus vorherigem Lauf bereinigen
+        # (passiert z.B. wenn cleanup_open_sessions beim Start nicht ausgeführt wurde)
+        await db.close_dangling_sessions_for_user(user_id, now)
 
         session_id = await db.insert_voice_session_start(
             user_id    = user_id,
@@ -99,9 +145,18 @@ class ActivityTracker:
                 "start":      now,
             }
             print(
-                f"🔄 Session neu gestartet: {member.display_name} "
+                f"🎙️  Voice-Start: {member.display_name} "
                 f"→ #{channel.name}"
             )
+
+    async def session_starten(self, member: discord.Member, channel):
+        """
+        Startet eine neue Voice-Session direkt – ohne ein Voice-State-Event.
+        Wird beim Bot-Start in on_ready() verwendet, für User die bereits
+        im Voice sitzen.
+        """
+        now = datetime.now(timezone.utc)
+        await self._session_starten_intern(member, channel, now)
 
     # -----------------------------------------------------------------------
     # Text-Tracking
