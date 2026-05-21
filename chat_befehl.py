@@ -200,6 +200,15 @@ class ChatZeitraumView(discord.ui.View):
             button.callback = self._erstelle_callback(tage)
             self.add_item(button)
 
+        # Aktualisierungs-Button – lädt die Statistik mit dem aktuellen Zeitraum neu
+        refresh_button = discord.ui.Button(
+            label     = "🔄",
+            style     = discord.ButtonStyle.secondary,
+            custom_id = f"chat_refresh_{user_id}",
+        )
+        refresh_button.callback = self._erstelle_refresh_callback()
+        self.add_item(refresh_button)
+
     def _erstelle_callback(self, tage: int):
         async def callback(interaction: discord.Interaction):
             hat_berechtigung = any(
@@ -230,6 +239,39 @@ class ChatZeitraumView(discord.ui.View):
                 interaction=interaction,
                 user=user,
                 zeitraum=tage,
+                edit=True,
+            )
+        return callback
+
+    def _erstelle_refresh_callback(self):
+        async def callback(interaction: discord.Interaction):
+            hat_berechtigung = any(
+                rolle.id in ERLAUBTE_ROLLEN_IDS
+                for rolle in interaction.user.roles
+            )
+            if not hat_berechtigung:
+                await interaction.response.send_message(
+                    "❌ Du hast keine Berechtigung, die Statistik zu aktualisieren.",
+                    ephemeral=True,
+                )
+                return
+
+            user_id = self.user_id
+            user    = interaction.guild.get_member(user_id)
+            if user is None:
+                try:
+                    user = await interaction.guild.fetch_member(user_id)
+                except discord.NotFound:
+                    await interaction.response.send_message(
+                        "❌ User nicht mehr auf dem Server gefunden.",
+                        ephemeral=True,
+                    )
+                    return
+
+            await _sende_chat_nachricht(
+                interaction=interaction,
+                user=user,
+                zeitraum=self.aktueller_zeitraum,
                 edit=True,
             )
         return callback
