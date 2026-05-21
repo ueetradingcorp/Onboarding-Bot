@@ -61,10 +61,44 @@ def _füge_wasserzeichen_ein(fig):
 
 
 # ===========================================================================
+# HILFSFUNKTION: Avatar herunterladen und kreisförmig zuschneiden
+# ===========================================================================
+
+async def _lade_avatar(avatar_url: str):
+    """
+    Lädt das Profilbild von der Discord-CDN herunter und gibt es als
+    kreisförmig zugeschnittenes numpy-Array zurück (RGBA).
+    Gibt None zurück wenn der Download fehlschlägt.
+    """
+    try:
+        import aiohttp
+        import numpy as np
+        from PIL import Image, ImageDraw
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(avatar_url) as resp:
+                if resp.status != 200:
+                    return None
+                daten = await resp.read()
+
+        img = Image.open(io.BytesIO(daten)).convert("RGBA").resize((128, 128), Image.LANCZOS)
+
+        # Kreismaske erstellen
+        maske = Image.new("L", (128, 128), 0)
+        draw  = ImageDraw.Draw(maske)
+        draw.ellipse((0, 0, 128, 128), fill=255)
+        img.putalpha(maske)
+
+        return np.array(img) / 255.0
+    except Exception as e:
+        print(f"⚠️ Avatar konnte nicht geladen werden: {e}")
+        return None
+
+# ===========================================================================
 # HILFSFUNKTION: Diagramm erstellen
 # ===========================================================================
 
-def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
+def _erstelle_voice_chart(username: str, days: int, rows: list, avatar=None) -> io.BytesIO:
     tages_daten: dict = {}
     for row in rows:
         tag = row["start_time"].astimezone(timezone.utc).date()
@@ -83,25 +117,34 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
             marker="o", markersize=3)
     ax.fill_between(alle_tage, werte, alpha=0.15, color="#5865f2")
 
-    ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
-                 color="white", fontsize=14, pad=12)
-    ax.set_xlabel("Datum",   color="#b5bac1", fontsize=10)
-    ax.set_ylabel("Minuten", color="#b5bac1", fontsize=10)
+    # Avatar + Titel als Kopfzeile oberhalb des Diagramms
+    if avatar is not None:
+        # Kleine Axes oben links für den runden Avatar
+        ax_avatar = fig.add_axes([0.01, 0.88, 0.06, 0.10])
+        ax_avatar.imshow(avatar)
+        ax_avatar.axis("off")
+        fig.text(0.09, 0.93, f"Voice-Aktivität – {username}  ({days} Tage)",
+                 color="white", fontsize=14, fontweight="bold",
+                 va="center", ha="left")
+    else:
+        ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
+                     color="white", fontsize=14, pad=12)
+    ax.set_xlabel("Datum",    color="#b5bac1", fontsize=10)
+    ax.set_ylabel("Stunden",  color="#b5bac1", fontsize=10)
     ax.tick_params(colors="#b5bac1")
     ax.spines[:].set_color("#4e5058")
 
     if days <= 30:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m."))
-        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))  # jeden Tag
-        fig.autofmt_xdate(rotation=55)  # steiler damit alle 30 Daten passen
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=3))
     elif days <= 90:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m."))
         ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
-        fig.autofmt_xdate(rotation=30)
     else:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
         ax.xaxis.set_major_locator(mdates.MonthLocator())
-        fig.autofmt_xdate(rotation=30)
+
+    fig.autofmt_xdate(rotation=30)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
 
     y_max = max(max(werte), 1.0)
@@ -158,9 +201,11 @@ async def _sende_voice_nachricht(
             f" ({gesamt_minuten:.0f} Minuten gesamt)"
         )
 
+    avatar = await _lade_avatar(str(user.display_avatar.url))
+
     try:
         buf = _erstelle_voice_chart(
-            username=user.display_name, days=zeitraum, rows=rows)
+            username=user.display_name, days=zeitraum, rows=rows, avatar=avatar)
     except Exception as exc:
         print(f"❌ Fehler beim Erstellen des Voice-Diagramms: {exc}")
         fehler = "❌ Beim Erstellen des Diagramms ist ein Fehler aufgetreten."
@@ -180,7 +225,6 @@ async def _sende_voice_nachricht(
         colour    = discord.Colour.blurple(),
         timestamp = discord.utils.utcnow(),
     )
-    embed.set_thumbnail(url=user.display_avatar.url)
     embed.set_image(url="attachment://voice_activity.png")
     embed.set_footer(text=f"Angefragt von {interaction.user.display_name}")
 
