@@ -68,7 +68,8 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     tages_daten: dict = {}
     for row in rows:
         tag = row["start_time"].astimezone(timezone.utc).date()
-        tages_daten[tag] = tages_daten.get(tag, 0.0) + (row["duration_minutes"] or 0.0)
+        # Minuten → Stunden umrechnen
+        tages_daten[tag] = tages_daten.get(tag, 0.0) + (row["duration_minutes"] or 0.0) / 60.0
 
     heute     = datetime.now(timezone.utc).date()
     startdag  = heute - timedelta(days=days - 1)
@@ -85,8 +86,8 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
 
     ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
                  color="white", fontsize=14, pad=12)
-    ax.set_xlabel("Datum",   color="#b5bac1", fontsize=10)
-    ax.set_ylabel("Minuten", color="#b5bac1", fontsize=10)
+    ax.set_xlabel("Datum",    color="#b5bac1", fontsize=10)
+    ax.set_ylabel("Stunden",  color="#b5bac1", fontsize=10)
     ax.tick_params(colors="#b5bac1")
     ax.spines[:].set_color("#4e5058")
 
@@ -103,9 +104,11 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     fig.autofmt_xdate(rotation=30)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
 
-    y_max = max(max(werte), 1.0)
-    ax.set_ylim(0, math.ceil(y_max * 1.1))
+    y_max = max(max(werte), 0.1)
+    ax.set_ylim(0, y_max * 1.1)
+    # Ganze Stunden auf der Y-Achse; bei < 1 h auch halbe Stunden lesbar
     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{int(v)}"))
 
     plt.tight_layout()
     _füge_wasserzeichen_ein(fig)
