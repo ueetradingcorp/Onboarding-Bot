@@ -133,15 +133,16 @@ def _erstelle_chat_chart(username: str, days: int, rows: list, avatar=None) -> i
 
     if days <= 30:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m."))
-        ax.xaxis.set_major_locator(mdates.DayLocator(interval=3))
+        ax.xaxis.set_major_locator(mdates.DayLocator(interval=1))  # jeden Tag
+        fig.autofmt_xdate(rotation=55)  # steiler damit alle 30 Daten passen
     elif days <= 90:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%d.%m."))
         ax.xaxis.set_major_locator(mdates.WeekdayLocator(interval=1))
+        fig.autofmt_xdate(rotation=30)
     else:
         ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
         ax.xaxis.set_major_locator(mdates.MonthLocator())
-
-    fig.autofmt_xdate(rotation=30)
+        fig.autofmt_xdate(rotation=30)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7, zorder=1)
 
     # Y-Achse: nur ganze Zahlen (Nachrichten existieren nicht als Dezimalwert)
