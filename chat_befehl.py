@@ -28,24 +28,37 @@ ERLAUBTE_ROLLEN_IDS = [
 # HILFSFUNKTION: Wasserzeichen einfügen
 # ===========================================================================
 
-def _füge_wasserzeichen_ein(fig):
+def _füge_wasserzeichen_ein(fig, ax):
     logo_pfad = Path(__file__).parent / "logo_transparent.png"
     if not logo_pfad.exists():
         return
     try:
         import numpy as np
         from PIL import Image
+
+        # Axes-Position in Pixel berechnen (der eigentliche Diagrammbereich,
+        # ohne Achsenbeschriftungen und Ränder)
+        fig.canvas.draw()
+        bbox = ax.get_window_extent(renderer=fig.canvas.get_renderer())
+
+        ax_breite = bbox.width
+        ax_hoehe  = bbox.height
+        ax_x0     = bbox.x0
+        ax_y0     = bbox.y0
+
+        # Logo auf 75% der Axes-Höhe skalieren (quadratisch)
+        ziel_groesse = int(min(ax_breite, ax_hoehe) * 0.75)
+
         logo = mpimg.imread(str(logo_pfad))
-        fig_breite = fig.get_figwidth()  * fig.dpi
-        fig_hoehe  = fig.get_figheight() * fig.dpi
-        ziel_hoehe  = int(fig_hoehe * 0.85)
-        ziel_breite = ziel_hoehe
         logo_pil = Image.fromarray((logo * 255).astype(np.uint8))
-        logo_pil = logo_pil.resize((ziel_breite, ziel_hoehe), Image.LANCZOS)
-        logo_skaliert = np.array(logo_pil) / 255.0
-        x_pos = int((fig_breite  - ziel_breite) / 2)
-        y_pos = int((fig_hoehe   - ziel_hoehe)  / 2)
-        fig.figimage(logo_skaliert, xo=x_pos, yo=y_pos, alpha=0.08, zorder=0)
+        logo_pil = logo_pil.resize((ziel_groesse, ziel_groesse), Image.LANCZOS)
+        logo_arr = np.array(logo_pil) / 255.0
+
+        # Zentriert im Axes-Bereich platzieren
+        x_pos = int(ax_x0 + (ax_breite  - ziel_groesse) / 2)
+        y_pos = int(ax_y0 + (ax_hoehe   - ziel_groesse) / 2)
+
+        fig.figimage(logo_arr, xo=x_pos, yo=y_pos, alpha=0.08, zorder=0)
     except Exception as e:
         print(f"⚠️ Wasserzeichen konnte nicht geladen werden: {e}")
 
@@ -93,8 +106,13 @@ def _erstelle_chat_chart(username: str, days: int, rows: list) -> io.BytesIO:
     ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7, zorder=1)
 
+    # Y-Achse: nur ganze Zahlen (Nachrichten können keine Dezimalwerte haben)
+    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    y_max = max(max(werte), 1)
+    ax.set_ylim(0, y_max * 1.1)
+
     plt.tight_layout()
-    _füge_wasserzeichen_ein(fig)
+    _füge_wasserzeichen_ein(fig, ax)
 
     buf = io.BytesIO()
     plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
@@ -200,15 +218,6 @@ class ChatZeitraumView(discord.ui.View):
             button.callback = self._erstelle_callback(tage)
             self.add_item(button)
 
-        # Aktualisierungs-Button – lädt die Statistik mit dem aktuellen Zeitraum neu
-        refresh_button = discord.ui.Button(
-            label     = "🔄",
-            style     = discord.ButtonStyle.secondary,
-            custom_id = f"chat_refresh_{user_id}",
-        )
-        refresh_button.callback = self._erstelle_refresh_callback()
-        self.add_item(refresh_button)
-
     def _erstelle_callback(self, tage: int):
         async def callback(interaction: discord.Interaction):
             hat_berechtigung = any(
@@ -239,39 +248,6 @@ class ChatZeitraumView(discord.ui.View):
                 interaction=interaction,
                 user=user,
                 zeitraum=tage,
-                edit=True,
-            )
-        return callback
-
-    def _erstelle_refresh_callback(self):
-        async def callback(interaction: discord.Interaction):
-            hat_berechtigung = any(
-                rolle.id in ERLAUBTE_ROLLEN_IDS
-                for rolle in interaction.user.roles
-            )
-            if not hat_berechtigung:
-                await interaction.response.send_message(
-                    "❌ Du hast keine Berechtigung, die Statistik zu aktualisieren.",
-                    ephemeral=True,
-                )
-                return
-
-            user_id = self.user_id
-            user    = interaction.guild.get_member(user_id)
-            if user is None:
-                try:
-                    user = await interaction.guild.fetch_member(user_id)
-                except discord.NotFound:
-                    await interaction.response.send_message(
-                        "❌ User nicht mehr auf dem Server gefunden.",
-                        ephemeral=True,
-                    )
-                    return
-
-            await _sende_chat_nachricht(
-                interaction=interaction,
-                user=user,
-                zeitraum=self.aktueller_zeitraum,
                 edit=True,
             )
         return callback
