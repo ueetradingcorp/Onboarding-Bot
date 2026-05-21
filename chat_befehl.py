@@ -63,7 +63,42 @@ def _füge_wasserzeichen_ein(fig):
 # HILFSFUNKTION: Diagramm erstellen
 # ===========================================================================
 
-def _erstelle_chat_chart(username: str, days: int, rows: list) -> io.BytesIO:
+# ===========================================================================
+# HILFSFUNKTION: Avatar herunterladen und kreisförmig zuschneiden
+# ===========================================================================
+
+async def _lade_avatar(avatar_url: str):
+    """
+    Lädt das Profilbild von der Discord-CDN herunter und gibt es als
+    kreisförmig zugeschnittenes numpy-Array zurück (RGBA).
+    Gibt None zurück wenn der Download fehlschlägt.
+    """
+    try:
+        import aiohttp
+        import numpy as np
+        from PIL import Image, ImageDraw
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(avatar_url) as resp:
+                if resp.status != 200:
+                    return None
+                daten = await resp.read()
+
+        img = Image.open(io.BytesIO(daten)).convert("RGBA").resize((128, 128), Image.LANCZOS)
+
+        # Kreismaske erstellen
+        maske = Image.new("L", (128, 128), 0)
+        draw  = ImageDraw.Draw(maske)
+        draw.ellipse((0, 0, 128, 128), fill=255)
+        img.putalpha(maske)
+
+        return np.array(img) / 255.0
+    except Exception as e:
+        print(f"⚠️ Avatar konnte nicht geladen werden: {e}")
+        return None
+
+
+def _erstelle_chat_chart(username: str, days: int, rows: list, avatar=None) -> io.BytesIO:
     tages_daten: dict = {}
     for row in rows:
         tages_daten[row["day"]] = int(row["message_count"])
@@ -81,8 +116,17 @@ def _erstelle_chat_chart(username: str, days: int, rows: list) -> io.BytesIO:
     ax.bar(alle_tage, werte, width=balken_breite, color="#57f287",
            alpha=0.85, zorder=2)
 
-    ax.set_title(f"Chat-Aktivität – {username}  ({days} Tage)",
-                 color="white", fontsize=14, pad=12)
+    # Avatar + Titel als Kopfzeile oberhalb des Diagramms
+    if avatar is not None:
+        ax_avatar = fig.add_axes([0.01, 0.88, 0.06, 0.10])
+        ax_avatar.imshow(avatar)
+        ax_avatar.axis("off")
+        fig.text(0.09, 0.93, f"Chat-Aktivität – {username}  ({days} Tage)",
+                 color="white", fontsize=14, fontweight="bold",
+                 va="center", ha="left")
+    else:
+        ax.set_title(f"Chat-Aktivität – {username}  ({days} Tage)",
+                     color="white", fontsize=14, pad=12)
     ax.set_xlabel("Datum",       color="#b5bac1", fontsize=10)
     ax.set_ylabel("Nachrichten", color="#b5bac1", fontsize=10)
     ax.tick_params(colors="#b5bac1")
@@ -145,9 +189,11 @@ async def _sende_chat_nachricht(
     gesamt_nachrichten = sum(int(r["message_count"]) for r in rows)
     aktive_tage        = len(rows)
 
+    avatar = await _lade_avatar(str(user.display_avatar.url))
+
     try:
         buf = _erstelle_chat_chart(
-            username=user.display_name, days=zeitraum, rows=rows)
+            username=user.display_name, days=zeitraum, rows=rows, avatar=avatar)
     except Exception as exc:
         print(f"❌ Fehler beim Erstellen des Chat-Diagramms: {exc}")
         fehler = "❌ Beim Erstellen des Diagramms ist ein Fehler aufgetreten."
@@ -168,7 +214,6 @@ async def _sende_chat_nachricht(
         colour    = discord.Colour.green(),
         timestamp = discord.utils.utcnow(),
     )
-    embed.set_thumbnail(url=user.display_avatar.url)
     embed.set_image(url="attachment://chat_activity.png")
     embed.set_footer(text=f"Angefragt von {interaction.user.display_name}")
 
