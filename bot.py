@@ -160,8 +160,18 @@ class OnboardingBot(discord.Client):
     # Fängt Voice- und Chat-Buttons anhand der custom_id ab – ohne gespeicherte
     # View-Instanzen. Funktioniert damit auch nach Bot-Neustarts für beliebig
     # alte Nachrichten.
+    # WICHTIG: Slash-Commands und Modals werden explizit an den CommandTree
+    # weitergeleitet, da on_interaction den gesamten Dispatch übernimmt.
     async def on_interaction(self, interaction: discord.Interaction):
-        # Nur Button-Klicks (type=component, component_type=2) behandeln
+        # Slash-Commands und Autocomplete immer an den CommandTree weitergeben
+        if interaction.type in (
+            discord.InteractionType.application_command,
+            discord.InteractionType.autocomplete,
+        ):
+            await self.tree.process_application_commands(interaction)
+            return
+
+        # Nur Button-Klicks weiterverarbeiten (component_type=2)
         if interaction.type != discord.InteractionType.component:
             return
         if interaction.data.get("component_type") != 2:
@@ -173,6 +183,10 @@ class OnboardingBot(discord.Client):
             await handle_voice_button(interaction)
         elif custom_id.startswith("chat_"):
             await handle_chat_button(interaction)
+        else:
+            # Unbekannter Button – damit Discord kein Timeout meldet
+            if not interaction.response.is_done():
+                await interaction.response.defer()
 
     # Debug-Listener: helfen zu isolieren, ob der Bot überhaupt Gateway-Events
     # für geplante Events empfängt. Wenn UPDATE/DELETE ankommen, aber CREATE
