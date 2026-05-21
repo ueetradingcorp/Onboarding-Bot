@@ -79,9 +79,16 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     fig.patch.set_facecolor("#2b2d31")
     ax.set_facecolor("#313338")
 
-    ax.plot(alle_tage, werte, color="#5865f2", linewidth=2,
-            marker="o", markersize=3)
+    # Linie ohne Marker (Marker separat nur an Tagen mit Aktivität)
+    ax.plot(alle_tage, werte, color="#5865f2", linewidth=2)
     ax.fill_between(alle_tage, werte, alpha=0.15, color="#5865f2")
+
+    # Punkte nur dort wo tatsächlich Aktivität vorhanden war
+    aktive_tage  = [t for t, w in zip(alle_tage, werte) if w > 0]
+    aktive_werte = [w for w in werte if w > 0]
+    if aktive_tage:
+        ax.scatter(aktive_tage, aktive_werte, color="#5865f2",
+                   s=25, zorder=3)
 
     ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
                  color="white", fontsize=14, pad=12)
