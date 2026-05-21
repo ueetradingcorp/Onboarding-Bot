@@ -36,10 +36,10 @@ def _füge_wasserzeichen_ein(fig):
         import numpy as np
         from PIL import Image
 
-        fig_breite_px = int(fig.get_figwidth()  * fig.dpi)
+        fig_breite_px = int(fig.get_figwidth() * fig.dpi)
         fig_hoehe_px  = int(fig.get_figheight() * fig.dpi)
 
-        logo_orig = Image.open(str(logo_pfad)).convert("RGBA")
+        logo_orig     = Image.open(str(logo_pfad)).convert("RGBA")
         orig_w, orig_h = logo_orig.size
 
         # Auf volle Figure-Breite skalieren, Seitenverhältnis beibehalten
@@ -49,10 +49,12 @@ def _füge_wasserzeichen_ein(fig):
         logo_skaliert = logo_orig.resize((ziel_breite, ziel_hoehe), Image.LANCZOS)
         logo_arr      = np.array(logo_skaliert) / 255.0
 
-        # Obere Kante des Logos an den oberen Rand der Figure legen.
-        # figimage(origin="upper") zählt yo von oben – daher yo=0.
-        # Was unten über die Figure-Höhe hinausragt, wird automatisch abgeschnitten.
-        fig.figimage(logo_arr, xo=0, yo=0, alpha=0.08, zorder=0, origin="upper")
+        # yo zählt von unten. Damit die obere Kante des Logos am oberen
+        # Bildrand sitzt: yo = fig_hoehe - ziel_hoehe
+        # Das Logo ragt dann nach unten über den Bildrand – dieser Teil
+        # wird von figimage automatisch abgeschnitten.
+        yo = fig_hoehe_px - ziel_hoehe
+        fig.figimage(logo_arr, xo=0, yo=yo, alpha=0.08, zorder=0)
     except Exception as e:
         print(f"⚠️ Wasserzeichen konnte nicht geladen werden: {e}")
 
@@ -209,8 +211,14 @@ class ChatZeitraumView(discord.ui.View):
                 custom_id = f"chat_{tage}_{user_id}",  # user_id steckt in der ID
                 disabled  = (tage == aktueller_zeitraum),
             )
-            button.callback = self._erstelle_callback(tage)
-            self.add_item(button)
+        # Aktualisierungs-Button – lädt die Statistik mit dem aktuellen Zeitraum neu
+        refresh_button = discord.ui.Button(
+            label     = "🔄",
+            style     = discord.ButtonStyle.secondary,
+            custom_id = f"chat_refresh_{user_id}",
+        )
+        refresh_button.callback = self._erstelle_refresh_callback()
+        self.add_item(refresh_button)
 
     def _erstelle_callback(self, tage: int):
         async def callback(interaction: discord.Interaction):
@@ -238,10 +246,37 @@ class ChatZeitraumView(discord.ui.View):
                     )
                     return
 
+        return callback
+
+    def _erstelle_refresh_callback(self):
+        async def callback(interaction: discord.Interaction):
+            hat_berechtigung = any(
+                rolle.id in ERLAUBTE_ROLLEN_IDS
+                for rolle in interaction.user.roles
+            )
+            if not hat_berechtigung:
+                await interaction.response.send_message(
+                    "❌ Du hast keine Berechtigung, die Statistik zu aktualisieren.",
+                    ephemeral=True,
+                )
+                return
+
+            user_id = self.user_id
+            user    = interaction.guild.get_member(user_id)
+            if user is None:
+                try:
+                    user = await interaction.guild.fetch_member(user_id)
+                except discord.NotFound:
+                    await interaction.response.send_message(
+                        "❌ User nicht mehr auf dem Server gefunden.",
+                        ephemeral=True,
+                    )
+                    return
+
             await _sende_chat_nachricht(
                 interaction=interaction,
                 user=user,
-                zeitraum=tage,
+                zeitraum=self.aktueller_zeitraum,
                 edit=True,
             )
         return callback
