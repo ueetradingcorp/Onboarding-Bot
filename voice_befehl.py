@@ -61,14 +61,49 @@ def _füge_wasserzeichen_ein(fig):
 
 
 # ===========================================================================
+# HILFSFUNKTION: Avatar herunterladen und kreisförmig zuschneiden
+# ===========================================================================
+
+async def _lade_avatar(avatar_url: str):
+    """
+    Lädt das Profilbild von der Discord-CDN herunter und gibt es als
+    kreisförmig zugeschnittenes numpy-Array zurück (RGBA).
+    Gibt None zurück wenn der Download fehlschlägt.
+    """
+    try:
+        import aiohttp
+        import numpy as np
+        from PIL import Image, ImageDraw
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(avatar_url) as resp:
+                if resp.status != 200:
+                    return None
+                daten = await resp.read()
+
+        img = Image.open(io.BytesIO(daten)).convert("RGBA").resize((128, 128), Image.LANCZOS)
+
+        # Kreismaske erstellen
+        maske = Image.new("L", (128, 128), 0)
+        draw  = ImageDraw.Draw(maske)
+        draw.ellipse((0, 0, 128, 128), fill=255)
+        img.putalpha(maske)
+
+        return np.array(img) / 255.0
+    except Exception as e:
+        print(f"⚠️ Avatar konnte nicht geladen werden: {e}")
+        return None
+
+
+# ===========================================================================
 # HILFSFUNKTION: Diagramm erstellen
 # ===========================================================================
 
-def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
+def _erstelle_voice_chart(username: str, days: int, rows: list, avatar=None) -> io.BytesIO:
     tages_daten: dict = {}
     for row in rows:
         tag = row["start_time"].astimezone(timezone.utc).date()
-        tages_daten[tag] = tages_daten.get(tag, 0.0) + (row["duration_minutes"] or 0.0)
+        tages_daten[tag] = tages_daten.get(tag, 0.0) + (row["duration_minutes"] or 0.0) / 60.0
 
     heute     = datetime.now(timezone.utc).date()
     startdag  = heute - timedelta(days=days - 1)
@@ -84,16 +119,25 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     ax.fill_between(alle_tage, werte, alpha=0.15, color="#5865f2")
 
     # Punkte nur dort wo tatsächlich Aktivität vorhanden war
-    aktive_tage  = [t for t, w in zip(alle_tage, werte) if w > 0]
-    aktive_werte = [w for w in werte if w > 0]
-    if aktive_tage:
-        ax.scatter(aktive_tage, aktive_werte, color="#5865f2",
+    aktive_tage_pts  = [t for t, w in zip(alle_tage, werte) if w > 0]
+    aktive_werte_pts = [w for w in werte if w > 0]
+    if aktive_tage_pts:
+        ax.scatter(aktive_tage_pts, aktive_werte_pts, color="#5865f2",
                    s=25, zorder=3)
 
-    ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
-                 color="white", fontsize=14, pad=12)
-    ax.set_xlabel("Datum",   color="#b5bac1", fontsize=10)
-    ax.set_ylabel("Minuten", color="#b5bac1", fontsize=10)
+    # Avatar + Titel als Kopfzeile oberhalb des Diagramms
+    if avatar is not None:
+        ax_avatar = fig.add_axes([0.01, 0.88, 0.06, 0.10])
+        ax_avatar.imshow(avatar)
+        ax_avatar.axis("off")
+        fig.text(0.09, 0.93, f"Voice-Aktivität – {username}  ({days} Tage)",
+                 color="white", fontsize=14, fontweight="bold",
+                 va="center", ha="left")
+    else:
+        ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
+                     color="white", fontsize=14, pad=12)
+    ax.set_xlabel("Datum",    color="#b5bac1", fontsize=10)
+    ax.set_ylabel("Stunden",  color="#b5bac1", fontsize=10)
     ax.tick_params(colors="#b5bac1")
     ax.spines[:].set_color("#4e5058")
 
@@ -111,9 +155,10 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     plt.setp(ax.get_xticklabels(), rotation=55, ha="right", rotation_mode="anchor")
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
 
-    y_max = max(max(werte), 1.0)
-    ax.set_ylim(0, math.ceil(y_max * 1.1))
+    y_max = max(max(werte), 0.1)
+    ax.set_ylim(0, y_max * 1.1)
     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{int(v)}"))
 
     plt.tight_layout()
     _füge_wasserzeichen_ein(fig)
@@ -165,9 +210,11 @@ async def _sende_voice_nachricht(
             f" ({gesamt_minuten:.0f} Minuten gesamt)"
         )
 
+    avatar = await _lade_avatar(str(user.display_avatar.url))
+
     try:
         buf = _erstelle_voice_chart(
-            username=user.display_name, days=zeitraum, rows=rows)
+            username=user.display_name, days=zeitraum, rows=rows, avatar=avatar)
     except Exception as exc:
         print(f"❌ Fehler beim Erstellen des Voice-Diagramms: {exc}")
         fehler = "❌ Beim Erstellen des Diagramms ist ein Fehler aufgetreten."
@@ -187,7 +234,6 @@ async def _sende_voice_nachricht(
         colour    = discord.Colour.blurple(),
         timestamp = discord.utils.utcnow(),
     )
-    embed.set_thumbnail(url=user.display_avatar.url)
     embed.set_image(url="attachment://voice_activity.png")
     embed.set_footer(text=f"Angefragt von {interaction.user.display_name}")
 
