@@ -18,8 +18,8 @@ from help_befehl import register_help_command
 # from sos import register_sos_command
 from database import db
 from activity_tracker import ActivityTracker
-from voice_befehl import register_voice_command, VoiceZeitraumView
-from chat_befehl import register_chat_command, ChatZeitraumView
+from voice_befehl import register_voice_command, handle_voice_button
+from chat_befehl import register_chat_command, handle_chat_button
 from dbtest_befehl import register_dbtest_command
 
 
@@ -138,11 +138,9 @@ class OnboardingBot(discord.Client):
         await self.tree.sync(guild=GUILD)
         print("✅ Slash-Commands wurden bei Discord registriert.")
 
-        # Persistent Views registrieren – damit Buttons nach einem Neustart
-        # weiterhin funktionieren. Platzhalter-IDs reichen für die Registrierung.
-        self.add_view(VoiceZeitraumView(user_id=0, aktueller_zeitraum=30))
-        self.add_view(ChatZeitraumView(user_id=0, aktueller_zeitraum=30))
-        print("✅ Persistent Views registriert.")
+        # Buttons werden über on_interaction + custom_id-Parsing behandelt.
+        # Kein add_view() nötig – funktioniert auch nach Neustarts für alte Nachrichten.
+        print("✅ Button-Handler aktiv (custom_id-basiert, neustart-sicher).")
 
     # Wird aufgerufen, wenn sich Rollen eines Mitglieds ändern
     async def on_member_update(self, before, after):
@@ -157,6 +155,24 @@ class OnboardingBot(discord.Client):
     # Wird aufgerufen, wenn eine neue Nachricht empfangen wird
     async def on_message(self, message: discord.Message):
         await self.activity_tracker.on_message(message)
+
+    # Wird aufgerufen, wenn ein Button geklickt wird.
+    # Fängt Voice- und Chat-Buttons anhand der custom_id ab – ohne gespeicherte
+    # View-Instanzen. Funktioniert damit auch nach Bot-Neustarts für beliebig
+    # alte Nachrichten.
+    async def on_interaction(self, interaction: discord.Interaction):
+        # Nur Button-Klicks (type=component, component_type=2) behandeln
+        if interaction.type != discord.InteractionType.component:
+            return
+        if interaction.data.get("component_type") != 2:
+            return
+
+        custom_id = interaction.data.get("custom_id", "")
+
+        if custom_id.startswith("voice_"):
+            await handle_voice_button(interaction)
+        elif custom_id.startswith("chat_"):
+            await handle_chat_button(interaction)
 
     # Debug-Listener: helfen zu isolieren, ob der Bot überhaupt Gateway-Events
     # für geplante Events empfängt. Wenn UPDATE/DELETE ankommen, aber CREATE

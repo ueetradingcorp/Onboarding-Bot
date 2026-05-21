@@ -90,19 +90,14 @@ def _erstelle_chat_chart(username: str, days: int, rows: list) -> io.BytesIO:
         ax.xaxis.set_major_locator(mdates.MonthLocator())
 
     fig.autofmt_xdate(rotation=30)
-    ax.legend(
-        facecolor="#313338", labelcolor="white", framealpha=0.8,
-        loc="lower left", bbox_to_anchor=(0, 1.02, 1, 0.08),
-        borderaxespad=0, mode="expand", ncol=1,
-    )
+    ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7, zorder=1)
 
     plt.tight_layout()
     _füge_wasserzeichen_ein(fig)
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor(),
-                bbox_inches="tight")
+    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
     plt.close(fig)
     buf.seek(0)
     return buf
@@ -273,3 +268,99 @@ def register_chat_command(tree: app_commands.CommandTree):
             zeitraum=30,
             edit=False,
         )
+
+
+# ===========================================================================
+# FUNKTION: handle_chat_button
+# Wird von bot.py's on_interaction aufgerufen für alle Button-Klicks deren
+# custom_id mit "chat_" beginnt. Parst die custom_id selbst und braucht
+# keine View-Instanz – funktioniert damit auch nach Bot-Neustarts für
+# beliebig alte Nachrichten.
+#
+# custom_id Formate:
+#   chat_30_<user_id>       → 30-Tage-Ansicht
+#   chat_90_<user_id>       → 90-Tage-Ansicht
+#   chat_365_<user_id>      → 365-Tage-Ansicht
+#   chat_refresh_<user_id>  → Aktuellen Zeitraum neu laden
+# ===========================================================================
+
+async def handle_chat_button(interaction: discord.Interaction):
+    custom_id = interaction.data["custom_id"]  # z.B. "chat_30_123456789"
+
+    # Berechtigungsprüfung
+    hat_berechtigung = any(
+        rolle.id in ERLAUBTE_ROLLEN_IDS
+        for rolle in interaction.user.roles
+    )
+    if not hat_berechtigung:
+        await interaction.response.send_message(
+            "❌ Du hast keine Berechtigung, diesen Button zu verwenden.",
+            ephemeral=True,
+        )
+        return
+
+    teile = custom_id.split("_")  # ["chat", "30", "123456789"]
+                                   # ["chat", "refresh", "123456789"]
+
+    try:
+        user_id = int(teile[-1])
+    except (ValueError, IndexError):
+        await interaction.response.send_message(
+            "❌ Ungültige Button-Daten. Bitte Befehl neu ausführen.",
+            ephemeral=True,
+        )
+        return
+
+    # User laden
+    user = interaction.guild.get_member(user_id)
+    if user is None:
+        try:
+            user = await interaction.guild.fetch_member(user_id)
+        except discord.NotFound:
+            await interaction.response.send_message(
+                "❌ User nicht mehr auf dem Server gefunden.",
+                ephemeral=True,
+            )
+            return
+
+    # Zeitraum bestimmen
+    aktion = teile[1]  # "30", "90", "365" oder "refresh"
+
+    if aktion == "refresh":
+        zeitraum = _zeitraum_aus_embed(interaction)
+    else:
+        try:
+            zeitraum = int(aktion)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Unbekannte Aktion. Bitte Befehl neu ausführen.",
+                ephemeral=True,
+            )
+            return
+
+    await _sende_chat_nachricht(
+        interaction=interaction,
+        user=user,
+        zeitraum=zeitraum,
+        edit=True,
+    )
+
+
+def _zeitraum_aus_embed(interaction: discord.Interaction) -> int:
+    """
+    Liest den aktuell angezeigten Zeitraum aus dem Embed der Nachricht,
+    auf die der Button-Klick reagiert. Fallback: 30 Tage.
+    """
+    try:
+        nachricht = interaction.message
+        if nachricht and nachricht.embeds:
+            beschreibung = nachricht.embeds[0].description or ""
+            for zeile in beschreibung.splitlines():
+                if "Zeitraum" in zeile:
+                    for wort in zeile.split():
+                        zahl = wort.strip("*").replace("Tage", "").replace("Tage**", "")
+                        if zahl.isdigit():
+                            return int(zahl)
+    except Exception:
+        pass
+    return 30
