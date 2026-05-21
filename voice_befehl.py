@@ -29,7 +29,7 @@ ERLAUBTE_ROLLEN_IDS = [
 # HILFSFUNKTION: Wasserzeichen einfügen
 # ===========================================================================
 
-def _füge_wasserzeichen_ein(fig, ax):
+def _füge_wasserzeichen_ein(fig):
     logo_pfad = Path(__file__).parent / "logo_transparent.png"
     if not logo_pfad.exists():
         return
@@ -37,29 +37,23 @@ def _füge_wasserzeichen_ein(fig, ax):
         import numpy as np
         from PIL import Image
 
-        # Axes-Position in Pixel berechnen (der eigentliche Diagrammbereich,
-        # ohne Achsenbeschriftungen und Ränder)
-        fig.canvas.draw()
-        bbox = ax.get_window_extent(renderer=fig.canvas.get_renderer())
+        fig_breite_px = int(fig.get_figwidth()  * fig.dpi)
+        fig_hoehe_px  = int(fig.get_figheight() * fig.dpi)
 
-        ax_breite = bbox.width
-        ax_hoehe  = bbox.height
-        ax_x0     = bbox.x0
-        ax_y0     = bbox.y0
+        logo_orig = Image.open(str(logo_pfad)).convert("RGBA")
+        orig_w, orig_h = logo_orig.size
 
-        # Logo auf 75% der Axes-Höhe skalieren (quadratisch)
-        ziel_groesse = int(min(ax_breite, ax_hoehe) * 0.75)
+        # Auf volle Figure-Breite skalieren, Seitenverhältnis beibehalten
+        ziel_breite = fig_breite_px
+        ziel_hoehe  = int(orig_h * ziel_breite / orig_w)
 
-        logo = mpimg.imread(str(logo_pfad))
-        logo_pil = Image.fromarray((logo * 255).astype(np.uint8))
-        logo_pil = logo_pil.resize((ziel_groesse, ziel_groesse), Image.LANCZOS)
-        logo_arr = np.array(logo_pil) / 255.0
+        logo_skaliert = logo_orig.resize((ziel_breite, ziel_hoehe), Image.LANCZOS)
+        logo_arr      = np.array(logo_skaliert) / 255.0
 
-        # Zentriert im Axes-Bereich platzieren
-        x_pos = int(ax_x0 + (ax_breite  - ziel_groesse) / 2)
-        y_pos = int(ax_y0 + (ax_hoehe   - ziel_groesse) / 2)
-
-        fig.figimage(logo_arr, xo=x_pos, yo=y_pos, alpha=0.08, zorder=0)
+        # Obere Kante des Logos an den oberen Rand der Figure legen.
+        # figimage(origin="upper") zählt yo von oben – daher yo=0.
+        # Was unten über die Figure-Höhe hinausragt, wird automatisch abgeschnitten.
+        fig.figimage(logo_arr, xo=0, yo=0, alpha=0.08, zorder=0, origin="upper")
     except Exception as e:
         print(f"⚠️ Wasserzeichen konnte nicht geladen werden: {e}")
 
@@ -84,7 +78,7 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     ax.set_facecolor("#313338")
 
     ax.plot(alle_tage, werte, color="#5865f2", linewidth=2,
-            marker="o", markersize=3, label="Sprachminuten")
+            marker="o", markersize=3)
     ax.fill_between(alle_tage, werte, alpha=0.15, color="#5865f2")
 
     ax.set_title(f"Voice-Aktivität – {username}  ({days} Tage)",
@@ -105,7 +99,6 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
         ax.xaxis.set_major_locator(mdates.MonthLocator())
 
     fig.autofmt_xdate(rotation=30)
-    ax.legend(facecolor="#313338", labelcolor="white", framealpha=0.8)
     ax.grid(axis="y", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
 
     y_max = max(max(werte), 1.0)
@@ -113,10 +106,11 @@ def _erstelle_voice_chart(username: str, days: int, rows: list) -> io.BytesIO:
     ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
     plt.tight_layout()
-    _füge_wasserzeichen_ein(fig, ax)
+    _füge_wasserzeichen_ein(fig)
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor())
+    plt.savefig(buf, format="png", dpi=120, facecolor=fig.get_facecolor(),
+                bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     return buf
