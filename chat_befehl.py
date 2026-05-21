@@ -211,6 +211,9 @@ class ChatZeitraumView(discord.ui.View):
                 custom_id = f"chat_{tage}_{user_id}",  # user_id steckt in der ID
                 disabled  = (tage == aktueller_zeitraum),
             )
+            button.callback = self._erstelle_callback(tage)
+            self.add_item(button)
+
         # Aktualisierungs-Button – lädt die Statistik mit dem aktuellen Zeitraum neu
         refresh_button = discord.ui.Button(
             label     = "🔄",
