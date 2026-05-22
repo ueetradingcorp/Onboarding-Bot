@@ -26,6 +26,35 @@ TOP_N = 10  # Anzahl der angezeigten Plätze
 
 
 # ===========================================================================
+# HILFSFUNKTION: Avatar herunterladen und kreisförmig zuschneiden
+# ===========================================================================
+
+async def _lade_avatar(avatar_url: str):
+    try:
+        import aiohttp
+        import numpy as np
+        from PIL import Image, ImageDraw
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(avatar_url) as resp:
+                if resp.status != 200:
+                    return None
+                daten = await resp.read()
+
+        img = Image.open(io.BytesIO(daten)).convert("RGBA").resize((128, 128), Image.LANCZOS)
+
+        maske = Image.new("L", (128, 128), 0)
+        draw  = ImageDraw.Draw(maske)
+        draw.ellipse((0, 0, 128, 128), fill=255)
+        img.putalpha(maske)
+
+        return np.array(img) / 255.0
+    except Exception as e:
+        print(f"⚠️ Avatar konnte nicht geladen werden: {e}")
+        return None
+
+
+# ===========================================================================
 # HILFSFUNKTION: Wasserzeichen einfügen
 # ===========================================================================
 
@@ -60,82 +89,135 @@ def _füge_wasserzeichen_ein(fig):
 # ===========================================================================
 
 def _erstelle_ranking_chart(
-    days: int,
-    voice_rows: list,
-    chat_rows:  list,
-    guild:      discord.Guild,
+    days:        int,
+    voice_rows:  list,
+    chat_rows:   list,
+    guild:       discord.Guild,
+    voice_avatare: dict,
+    chat_avatare:  dict,
 ) -> io.BytesIO:
+    """
+    Erstellt zwei horizontale Balkendiagramme übereinander.
+    voice_avatare / chat_avatare: {user_id: np.array (RGBA, 128x128)} oder leer.
+    """
+    import numpy as np
 
-    # ── Voice-Daten aufbereiten ──────────────────────────────────────────
-    voice_namen  = []
-    voice_werte  = []
-    for row in voice_rows[:TOP_N]:
-        member = guild.get_member(row["user_id"])
-        name   = member.display_name if member else f"ID {row['user_id']}"
-        voice_namen.append(name)
-        voice_werte.append(round((row["gesamt_minuten"] or 0.0) / 60.0, 2))
+    # ── Daten aufbereiten ────────────────────────────────────────────────
+    def _aufbereiten(rows, wert_key, umrechnung=1.0):
+        namen, werte, user_ids = [], [], []
+        for row in rows[:TOP_N]:
+            member = guild.get_member(row["user_id"])
+            namen.append(member.display_name if member else f"ID {row['user_id']}")
+            werte.append(round((row[wert_key] or 0.0) * umrechnung, 2))
+            user_ids.append(row["user_id"])
+        # Umkehren: Platz 1 oben
+        return namen[::-1], werte[::-1], user_ids[::-1]
 
-    # ── Chat-Daten aufbereiten ───────────────────────────────────────────
-    chat_namen  = []
-    chat_werte  = []
-    for row in chat_rows[:TOP_N]:
-        member = guild.get_member(row["user_id"])
-        name   = member.display_name if member else f"ID {row['user_id']}"
-        chat_namen.append(name)
-        chat_werte.append(int(row["gesamt_nachrichten"] or 0))
+    voice_namen, voice_werte, voice_ids = _aufbereiten(
+        voice_rows, "gesamt_minuten", 1 / 60.0)
+    chat_namen,  chat_werte,  chat_ids  = _aufbereiten(
+        chat_rows, "gesamt_nachrichten", 1.0)
 
-    # Reihenfolge umkehren damit Platz 1 oben steht
-    voice_namen  = voice_namen[::-1]
-    voice_werte  = voice_werte[::-1]
-    chat_namen   = chat_namen[::-1]
-    chat_werte   = chat_werte[::-1]
-
-    # ── Figure mit zwei Subplots ─────────────────────────────────────────
+    # ── Figure ───────────────────────────────────────────────────────────
     fig, (ax_v, ax_c) = plt.subplots(
         2, 1,
-        figsize=(12, max(6, TOP_N * 0.9)),
+        figsize=(12, max(7, TOP_N * 1.0)),
         facecolor="#2b2d31",
     )
     fig.patch.set_facecolor("#2b2d31")
 
-    def _zeichne_balken(ax, namen, werte, farbe, xlabel, titel):
+    def _zeichne_balken(ax, namen, werte, user_ids, avatare, farbe, xlabel, titel):
         ax.set_facecolor("#313338")
-        bars = ax.barh(namen, werte, color=farbe, alpha=0.85, height=0.6)
 
-        # Wert am Ende jedes Balkens
+        # Y-Achsen-Labels leer lassen – Namen kommen als fig.text neben Avatar
+        positionen = list(range(len(namen)))
+        bars = ax.barh(positionen, werte, color=farbe, alpha=0.85, height=0.55)
+
+        # Wert rechts am Balken
         for bar, wert in zip(bars, werte):
-            label = f"{wert:.1f} h" if farbe == "#5865f2" else f"{wert:,}"
+            label = f"{wert:.1f} h" if farbe == "#5865f2" else f"{int(wert):,}"
             ax.text(
-                bar.get_width() + max(werte) * 0.01,
+                bar.get_width() + (max(werte) * 0.01 if werte else 0.01),
                 bar.get_y() + bar.get_height() / 2,
                 label,
-                va="center", ha="left",
-                color="white", fontsize=9,
+                va="center", ha="left", color="white", fontsize=9,
             )
 
         ax.set_title(titel, color="white", fontsize=13, pad=8)
         ax.set_xlabel(xlabel, color="#b5bac1", fontsize=10)
-        ax.tick_params(colors="#b5bac1", labelsize=10)
-        ax.spines[:].set_color("#4e5058")
+        ax.set_yticks(positionen)
+        ax.set_yticklabels([""] * len(namen))  # leere Labels, Avatar + Name kommen separat
+
+        # Rahmen: nur unten und rechts sichtbar, links weg
+        for spine in ax.spines.values():
+            spine.set_color("#4e5058")
+        ax.spines["left"].set_visible(False)
+
+        ax.tick_params(colors="#b5bac1", left=False)
         ax.set_xlim(0, max(werte) * 1.18 if werte else 1)
-        ax.xaxis.set_major_formatter(
-            plt.FuncFormatter(lambda v, _: f"{v:.0f}")
-        )
-        ax.grid(axis="x", color="#4e5058", linestyle="--",
-                linewidth=0.6, alpha=0.7)
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}"))
+        ax.grid(axis="x", color="#4e5058", linestyle="--", linewidth=0.6, alpha=0.7)
+        ax.set_ylim(-0.5, len(namen) - 0.5)
 
-    _zeichne_balken(
-        ax_v, voice_namen, voice_werte,
-        "#5865f2", "Stunden",
-        f"🎙️  Voice-Ranking  –  letzte {days} Tage",
-    )
-    _zeichne_balken(
-        ax_c, chat_namen, chat_werte,
-        "#57f287", "Nachrichten",
-        f"💬  Chat-Ranking  –  letzte {days} Tage",
-    )
+        # Avatare + Namen links neben den Balken
+        # Nach tight_layout werden die Axes-Koordinaten in Figure-Koordinaten umgerechnet
+        fig.canvas.draw()
+        renderer  = fig.canvas.get_renderer()
+        ax_bbox   = ax.get_window_extent(renderer=renderer)
+        fig_h_px  = fig.get_figheight() * fig.dpi
+        fig_w_px  = fig.get_figwidth()  * fig.dpi
 
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+        # Höhe einer Zeile in Figure-Koordinaten
+        if len(namen) > 1:
+            y0_px = ax.transData.transform((0, positionen[0]))[1]
+            y1_px = ax.transData.transform((0, positionen[1]))[1]
+            zeilen_hoehe_px = abs(y1_px - y0_px)
+        else:
+            zeilen_hoehe_px = ax_bbox.height / max(len(namen), 1)
+
+        avatar_groesse = min(int(zeilen_hoehe_px * 0.75), 36)  # max 36px
+
+        for i, (uid, name) in enumerate(zip(user_ids, namen)):
+            # Y-Mitte dieser Zeile in Pixel (von unten)
+            y_px = ax.transData.transform((0, positionen[i]))[1]
+
+            # Avatar zeichnen
+            if uid in avatare and avatare[uid] is not None:
+                avatar_arr = avatare[uid]
+                # Auf Zielgröße skalieren
+                from PIL import Image
+                pil = Image.fromarray((avatar_arr * 255).astype(np.uint8))
+                pil = pil.resize((avatar_groesse, avatar_groesse), Image.LANCZOS)
+                avatar_klein = np.array(pil) / 255.0
+
+                x_avatar = ax_bbox.x0 - avatar_groesse - 4
+                y_avatar = y_px - avatar_groesse / 2
+                fig.figimage(avatar_klein, xo=int(x_avatar), yo=int(y_avatar),
+                             zorder=5)
+
+                # Name rechts vom Avatar
+                x_name_px  = ax_bbox.x0 - 2
+                y_name_frac = y_px / fig_h_px
+                x_name_frac = x_name_px / fig_w_px
+            else:
+                # Kein Avatar – nur Name
+                x_name_frac = (ax_bbox.x0 - 4) / fig_w_px
+                y_name_frac = y_px / fig_h_px
+
+            fig.text(
+                x_name_frac, y_name_frac, name,
+                color="#b5bac1", fontsize=9,
+                va="center", ha="right",
+            )
+
+    _zeichne_balken(ax_v, voice_namen, voice_werte, voice_ids, voice_avatare,
+                    "#5865f2", "Stunden",
+                    f"🎙️  Voice-Ranking  –  letzte {days} Tage")
+    _zeichne_balken(ax_c, chat_namen,  chat_werte,  chat_ids,  chat_avatare,
+                    "#57f287", "Nachrichten",
+                    f"💬  Chat-Ranking  –  letzte {days} Tage")
+
+    plt.tight_layout(rect=[0.12, 0, 1, 0.97])
     _füge_wasserzeichen_ein(fig)
 
     buf = io.BytesIO()
@@ -170,12 +252,28 @@ async def _sende_ranking_nachricht(
             await interaction.followup.send(inhalt)
         return
 
+    # Avatare für alle User vorab laden (parallel wäre ideal,
+    # sequentiell ist aber einfacher und bei 10-20 Usern schnell genug)
+    async def _avatare_laden(rows, id_key="user_id"):
+        avatare = {}
+        for row in rows:
+            uid    = row[id_key]
+            member = guild.get_member(uid)
+            if member and uid not in avatare:
+                avatare[uid] = await _lade_avatar(str(member.display_avatar.url))
+        return avatare
+
+    voice_avatare = await _avatare_laden(voice_rows)
+    chat_avatare  = await _avatare_laden(chat_rows)
+
     try:
         buf = _erstelle_ranking_chart(
             days=zeitraum,
             voice_rows=voice_rows,
             chat_rows=chat_rows,
             guild=guild,
+            voice_avatare=voice_avatare,
+            chat_avatare=chat_avatare,
         )
     except Exception as exc:
         print(f"❌ Fehler beim Erstellen des Ranking-Diagramms: {exc}")
