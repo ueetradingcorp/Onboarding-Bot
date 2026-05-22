@@ -93,6 +93,20 @@ def register_help_command(tree: app_commands.CommandTree):
         )
 
         # ------------------------------------------------------------------
+        # /ranking
+        # ------------------------------------------------------------------
+        embed1.add_field(
+            name="🏆  `/ranking`  🔒",
+            value=(
+                "Zeigt die Top-10 der aktivsten Mitglieder in Voice und Chat.\n"
+                "Zwei Balkendiagramme (Voice-Stunden & Chat-Nachrichten) in einer Grafik.\n"
+                "Zeitraum per Button wählbar: **7 / 30 / 90 Tage**, plus 🔄 zum Aktualisieren.\n"
+                "**Berechtigung:** Recruiter · Moderatoren · Direktoren"
+            ),
+            inline=False,
+        )
+
+        # ------------------------------------------------------------------
         # Embed 2: Automatische Hintergrundfunktionen
         # ------------------------------------------------------------------
         embed2 = discord.Embed(

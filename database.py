@@ -335,6 +335,71 @@ class Database:
             return []
 
     # -----------------------------------------------------------------------
+    # Ranking-Abfragen
+    # -----------------------------------------------------------------------
+
+    async def get_voice_ranking(
+        self,
+        days:  int,
+        limit: int = 10,
+    ) -> list[asyncpg.Record]:
+        """
+        Gibt die Top-`limit` User nach gesamten Voice-Minuten der letzten
+        `days` Tage zurück, absteigend sortiert.
+        Nur abgeschlossene Sessions mit duration_minutes > 0.
+        """
+        if not self.pool:
+            return []
+        try:
+            rows = await self.pool.fetch(
+                """
+                SELECT user_id,
+                       SUM(duration_minutes) AS gesamt_minuten
+                  FROM user_voice_activity
+                 WHERE end_time         IS NOT NULL
+                   AND duration_minutes  > 0
+                   AND start_time       >= NOW() - ($1 || ' days')::INTERVAL
+                 GROUP BY user_id
+                 ORDER BY gesamt_minuten DESC
+                 LIMIT $2
+                """,
+                str(days), limit,
+            )
+            return rows
+        except Exception as exc:
+            print(f"❌ DB get_voice_ranking: {exc}")
+            return []
+
+    async def get_chat_ranking(
+        self,
+        days:  int,
+        limit: int = 10,
+    ) -> list[asyncpg.Record]:
+        """
+        Gibt die Top-`limit` User nach Gesamtnachrichtenanzahl der letzten
+        `days` Tage zurück, absteigend sortiert.
+        """
+        if not self.pool:
+            return []
+        try:
+            rows = await self.pool.fetch(
+                """
+                SELECT user_id,
+                       COUNT(*) AS gesamt_nachrichten
+                  FROM user_text_activity
+                 WHERE timestamp >= NOW() - ($1 || ' days')::INTERVAL
+                 GROUP BY user_id
+                 ORDER BY gesamt_nachrichten DESC
+                 LIMIT $2
+                """,
+                str(days), limit,
+            )
+            return rows
+        except Exception as exc:
+            print(f"❌ DB get_chat_ranking: {exc}")
+            return []
+
+    # -----------------------------------------------------------------------
     # Startup-Bereinigung
     # -----------------------------------------------------------------------
 
